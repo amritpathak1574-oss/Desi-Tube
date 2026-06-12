@@ -1,33 +1,49 @@
 import streamlit as st
 import os
+import json
 
-# 1. Page Configuration
-st.set_page_config(page_title="DesiTube Enterprise", page_icon="📺", layout="wide")
+# Page Config
+st.set_page_config(page_title="DesiTube Permanent", page_icon="📺", layout="wide")
+st.title("📺 DesiTube — Fixed & Permanent Edition")
 
-# Database Initialization in Session State
+# ---------------- DATABASE FILES SETUP ----------------
+# Do files banayenge permanent storage ke liye
+VIDEOS_FILE = "permanent_videos.json"
+USERS_FILE = "permanent_users.json"
+
+# Helper Function: Data load karne ke liye
+def load_data(file_name, default_value):
+    if os.path.exists(file_name):
+        with open(file_name, "r") as f:
+            return json.load(f)
+    return default_value
+
+# Helper Function: Data save karne ke liye
+def save_data(file_name, data):
+    with open(file_name, "w") as f:
+        json.dump(data, f, indent=4)
+
+# Shuruati data agar files khali hain
+default_users = {"amrit": {"password": "123", "channel": "Amrit Coder 🇮🇳", "history": []}}
+default_videos = [
+    {"id": 1, "title": "Python Premium Game Tutorial", "channel": "Amrit Coder 🇮🇳", "category": "Tech", "url": "https://www.w3schools.com/html/mov_bbb.mp4", "views": 100, "likes": 25}
+]
+
+# JSON se data load karke Session State mein daalna (Sirf ek baar)
 if "users_db" not in st.session_state:
-    # Users database format: {username: {password: pass, channel: channel_name, history: [tags]}}
-    st.session_state.users_db = {
-        "amrit": {"password": "123", "channel": "Amrit Coder 🇮🇳", "history": ["Tech", "Gaming"]}
-    }
+    st.session_state.users_db = load_data(USERS_FILE, default_users)
 
 if "videos_db" not in st.session_state:
-    # Videos ke saath hum 'category' ya 'tags' add kar rahe hain algorithm ke liye
-    st.session_state.videos_db = [
-        {"id": 1, "title": "Python Game Development Tutorial", "channel": "Amrit Coder 🇮🇳", "category": "Tech", "url": "https://www.w3schools.com/html/mov_bbb.mp4", "views": 150, "likes": 40},
-        {"id": 2, "title": "Minecraft Speedrun World Record", "channel": "GamerX", "category": "Gaming", "url": "https://www.w3schools.com/html/movie.mp4", "views": 90, "likes": 30},
-        {"id": 3, "title": "Top 10 Lo-Fi Beats to Study", "channel": "ChillVibes", "category": "Music", "url": "https://www.w3schools.com/html/mov_bbb.mp4", "views": 200, "likes": 85},
-        {"id": 4, "title": "Building a Tech Startup in India", "channel": "Amrit Coder 🇮🇳", "category": "Tech", "url": "https://www.w3schools.com/html/movie.mp4", "views": 310, "likes": 120}
-    ]
+    st.session_state.videos_db = load_data(VIDEOS_FILE, default_videos)
 
 if "current_user" not in st.session_state:
-    st.session_state.current_user = None # Shuru mein koi login nahi hai
+    st.session_state.current_user = None
 
-# ----------------- SIDEBAR AUTHENTICATION SYSTEM -----------------
+# ----------------- SIDEBAR AUTHENTICATION -----------------
 st.sidebar.title("🔐 User Account")
 
 if st.session_state.current_user is None:
-    auth_mode = st.sidebar.selectbox("Login ya Sign Up karo", ["Login", "Create Channel (Sign Up)"])
+    auth_mode = st.sidebar.selectbox("Login / Sign Up", ["Login", "Create Channel"])
     
     if auth_mode == "Login":
         username = st.sidebar.text_input("Username")
@@ -35,109 +51,94 @@ if st.session_state.current_user is None:
         if st.sidebar.button("Log In"):
             if username in st.session_state.users_db and st.session_state.users_db[username]["password"] == password:
                 st.session_state.current_user = username
-                st.sidebar.success(f"Welcome back, {username}!")
+                st.sidebar.success(f"Welcome, {username}!")
                 st.rerun()
             else:
-                st.sidebar.error("Wrong Username or Password!")
+                st.sidebar.error("Galat password ya username!")
                 
-    elif auth_mode == "Create Channel (Sign Up)":
+    elif auth_mode == "Create Channel":
         new_user = st.sidebar.text_input("Choose Username")
         new_pass = st.sidebar.text_input("Choose Password", type="password")
-        new_channel = st.sidebar.text_input("Your Channel Name (e.g., T-Series Mini)")
+        new_channel = st.sidebar.text_input("Channel Name")
         
-        if st.sidebar.button("Register & Create Channel"):
+        if st.sidebar.button("Register Channel"):
             if new_user and new_pass and new_channel:
                 if new_user not in st.session_state.users_db:
+                    # Session state update karo
                     st.session_state.users_db[new_user] = {
                         "password": new_pass,
                         "channel": new_channel,
-                        "history": [] # Naye user ki history shuru mein khali hogi
+                        "history": []
                     }
+                    # PERMANENT SAVE: File mein write karo
+                    save_data(USERS_FILE, st.session_state.users_db)
+                    
                     st.session_state.current_user = new_user
-                    st.sidebar.success("Channel Created Successfully! 🎉")
+                    st.sidebar.success("Channel Saved Permanently! 🎉")
                     st.rerun()
                 else:
-                    st.sidebar.error("Username pehle se hi le rakha hai kisi ne!")
+                    st.sidebar.error("Username already exists!")
 else:
     user_info = st.session_state.users_db[st.session_state.current_user]
-    st.sidebar.success(f"Logged in as: **{st.session_state.current_user}**")
+    st.sidebar.success(f"Logged in: **{st.session_state.current_user}**")
     st.sidebar.info(f"📺 Channel: **{user_info['channel']}**")
     if st.sidebar.button("Logout"):
         st.session_state.current_user = None
         st.rerun()
 
-# ----------------- MAIN APP NAVIGATION -----------------
+# ----------------- MAIN APP -----------------
 menu = ["🏠 Home (Smart Feed)", "📤 Upload Content"]
 choice = st.radio("Menu", menu, horizontal=True)
 
-# ALGORITHM LOGIC: Smart Feed Content Recommender
-def get_recommended_videos():
+# ALGORITHM: Sorting based on history
+if choice == "🏠 Home (Smart Feed)":
     all_videos = st.session_state.videos_db.copy()
     
-    # Agar user logged in hai aur uski koi watch history hai
+    # Check history for algorithm
     if st.session_state.current_user and st.session_state.users_db[st.session_state.current_user]["history"]:
         user_history = st.session_state.users_db[st.session_state.current_user]["history"]
-        
-        # Ek key banate hain algorithm ke liye jo preferred category ko upar rakhegi
-        # Jo category history mein sabse zyada hogi, uski videos pehle aayengi
-        def algo_sort_key(video):
-            # Jitni baar category history mein aayi hai, utni priority badhao
-            priority = user_history.count(video["category"])
-            return priority
-        
-        # Videos ko custom weight ke hisab se sort karna (Highest priority first)
-        all_videos.sort(key=algo_sort_key, reverse=True)
-        return all_videos, True
+        all_videos.sort(key=lambda x: user_history.count(x["category"]), reverse=True)
+        st.write("✨ **Recommended For You**")
     else:
-        # Agar user login nahi hai to views ke hisab se "Trending Videos" dikhao
         all_videos.sort(key=lambda x: x["views"], reverse=True)
-        return all_videos, False
-
-# ----------------- PAGE 1: HOME (SMART FEED) -----------------
-if choice == "🏠 Home (Smart Feed)":
-    videos, is_personalized = get_recommended_videos()
-    
-    if is_personalized:
-        st.write("✨ **Recommended For You** (Based on your interest/history)")
-    else:
-        st.write("🔥 **Trending Feed** (Log in to get personalized recommendations!)")
+        st.write("🔥 **Trending Feed**")
         
-    # Grid Layout to show videos
     cols = st.columns(2)
-    for idx, vid in enumerate(videos):
+    for idx, vid in enumerate(all_videos):
         with cols[idx % 2]:
             st.markdown(f"### {vid['title']}")
-            st.caption(f"📺 Channel: {vid['channel']} | 🏷️ Category: `{vid['category']}`")
+            st.caption(f"Channel: {vid['channel']} | Category: `{vid['category']}`")
             st.video(vid["url"])
             
-            # Watch Video button jo history aur views track karega
-            if st.button(f"▶️ Watch & Interact", key=f"watch_{vid['id']}"):
-                # 1. View Count Badhana
+            if st.button(f"▶️ Watch Video", key=f"watch_{vid['id']}"):
+                # View count badhao session state mein
                 vid["views"] += 1
                 
-                # 2. Algorithm Trigger: History register karna (sirf agar logged in ho)
+                # History add karo
                 if st.session_state.current_user:
                     st.session_state.users_db[st.session_state.current_user]["history"].append(vid["category"])
-                    st.toast(f"Algorithm Updated: Prefers {vid['category']}! 🚀")
+                    save_data(USERS_FILE, st.session_state.users_db) # Save user history
+                
+                # PERMANENT SAVE: Video views database file mein save karo
+                save_data(VIDEOS_FILE, st.session_state.videos_db)
                 st.rerun()
                 
             st.write(f"👁️ {vid['views']} views | 👍 {vid['likes']} likes")
             st.markdown("---")
 
-# ----------------- PAGE 2: UPLOAD CONTENT -----------------
+# ----------------- UPLOAD PAGE -----------------
 elif choice == "📤 Upload Content":
-    st.header("📤 Creator Dashboard")
+    st.header("📤 Creator Studio")
     
     if st.session_state.current_user is None:
-        st.warning("Bhai, pehle side panel se login karo ya apna Channel banao tabhi upload kar paoge!")
+        st.warning("Bhai, pehle side panel se login karo!")
     else:
         user_channel = st.session_state.users_db[st.session_state.current_user]["channel"]
-        st.write(f"Uploading as: **{user_channel}**")
         
         with st.form("upload_form"):
             title = st.text_input("Video Title")
-            category = st.selectbox("Video Category (For Algorithm)", ["Tech", "Gaming", "Music", "Vlogs"])
-            video_url = st.text_input("Paste Video MP4 URL (e.g., https://www.w3schools.com/html/mov_bbb.mp4)")
+            category = st.selectbox("Category", ["Tech", "Gaming", "Music", "Vlogs"])
+            video_url = st.text_input("Video MP4 URL")
             
             submit = st.form_submit_button("Publish Video")
             if submit and title and video_url:
@@ -150,5 +151,10 @@ elif choice == "📤 Upload Content":
                     "views": 0,
                     "likes": 0
                 }
+                # Session State mein daalo
                 st.session_state.videos_db.append(new_vid)
-                st.success(f"🎉 Boom! '{title}' is now live under category {category}!")
+                
+                # PERMANENT SAVE: File mein video save karo
+                save_data(VIDEOS_FILE, st.session_state.videos_db)
+                
+                st.success(f"🎉 '{title}' ab permanently save ho gayi hai!")
